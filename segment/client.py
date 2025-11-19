@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import main_single_image
 
+# ===== logging setting =====
 tz_taiwan = timezone(timedelta(hours=8))
 LOG_DIR = Path(__file__).resolve().parent / "logs" / 'log'
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -20,23 +21,18 @@ logging.basicConfig(
 )
 LOGGER = logging.getLogger("client")
 
-DEFAULT_HOST = "127.0.0.1"  # 改成 server IP
-DEFAULT_PORT = 55688
-RECONNECT_DELAY = 5  # 重新連線延遲秒數
+# ===== backup path setting =====
+main_single_image.BACKUP_LABELS_OUT_DIR = '/data/yolov9/segment/logs/txt_out/'
+main_single_image.BACKUP_VIS_DIR = '/data/yolov9/segment/logs/img_out/'
+dst_dir = Path("/data/yolov9/segment/logs/img_in")
+dst_dir.mkdir(parents=True, exist_ok=True)
 
-
-# ===== 動作函式區 =====
+# ===== action list =====
 def alive_action(*arg):
     return
 
-
-def img_action(conn, cmd):
-    print("[Client] get IMG")
-    LOGGER.info("get IMG")
-    main_single_image.IMAGE_PATH = '/data/yolov9/images/' + '_'.join(cmd) + '.png'
+def backup_action(src_path, dst_dir):
     src_path = Path(main_single_image.IMAGE_PATH)
-    dst_dir = Path("/data/yolov9/segment/logs/img_in")
-    dst_dir.mkdir(parents=True, exist_ok=True)
     dst_path = dst_dir / src_path.name
     try:
         shutil.copy2(src_path, dst_path)
@@ -44,25 +40,39 @@ def img_action(conn, cmd):
         LOGGER.error(f"[Client] image not found for backup: {src_path}")
     except Exception as err:
         LOGGER.exception(f"[Client] failed to copy original image: {err}")
+
+def img_action(conn, cmd):
+    LOGGER.info("get IMG")
+    # ===== path setting =====
+    main_single_image.IMAGE_PATH = f"/data/yolov9/images/{'_'.join(cmd)}.png"
     main_single_image.LABELS_DIR = '/data/yolov9/segment/txt_out/'
     main_single_image.STEP1_VIS_DIR = '/data/yolov9/segment/img_out/'
-    main_single_image.BACKUP_LABELS_OUT_DIR = '/data/yolov9/segment/logs/txt_out/'
-    main_single_image.BACKUP_VIS_DIR = '/data/yolov9/segment/logs/img_out/'
+    
     # main_single_image.IMAGE_PATH = "/mnt/share/img/" + "_".join(cmd) + ".png"
     # main_single_image.LABELS_OUT_DIR = "/mnt/share/txt/"
     # main_single_image.STEP1_VIS_DIR = "/mnt/share/inf/"
+    backup_action(main_single_image.IMAGE_PATH, dst_dir)
     # ===== image process =====
     try:
         start_time = time.time()
-        # main_single_image.run("sea")
-        main_single_image.run("ship")
+        sea_inf = threading.Thread(
+                    target=main_single_image.run, args=('sea',), daemon=True
+                )
+        ship_inf = threading.Thread(
+                    target=main_single_image.run, args=('ship',), daemon=True
+                )
+        sea_inf.start()
+        ship_inf.start()
+        sea_inf.join()
+        ship_inf.join()
         end_time = time.time()
-        LOGGER.info(f"[Client] use {end_time - start_time:.2f} seconds")
+        LOGGER.info(f"[Client] finish img process and use {end_time - start_time:.2f} seconds")
         conn.sendall(f"txt_{cmd[1]}".encode())
+        LOGGER.info(f"[Client] send message: txt_{cmd[1]}")
     except Exception as e:
         LOGGER.exception(f"[Client] img process error: {e}")
 
-# ===== 指令對應表 =====
+# ===== command map =====
 COMMAND_MAP = {"alive": alive_action, "img": img_action}
 
 
@@ -70,28 +80,28 @@ def run_action_safe(action, conn, cmd):
     try:
         action(conn, cmd)
     except Exception as err:
-        LOGGER.exception(f"[Client] 執行指令時發生錯誤: {err}")
+        LOGGER.exception(f"[Client] execute error: {err}")
 
 
-# ===== 接收主迴圈 =====
+# ===== listen msg and execute action =====
 def listen_server(conn):
     while True:
         try:
             data = conn.recv(1024)
             if not data:
-                LOGGER.warning("[Client] ⚠️ 連線中斷")
+                LOGGER.warning("[Client] ⚠️ no data received, host may have disconnected")
                 return
 
             msg = data.decode().strip().lower()
             cmd = msg.split("_")
-            # 處理 ALIVE 心跳
+            # convert heart beat msg
             if msg == "hey! hey you! yeah you~":
                 LOGGER.info("[Client] receive heart")
                 continue
 
             LOGGER.info(f"[Client] receive message: {msg}")
 
-            # 依指令執行對應函式
+            # execute action
             action = COMMAND_MAP.get(cmd[0])
             if action:
                 threading.Thread(
@@ -101,14 +111,15 @@ def listen_server(conn):
                 LOGGER.warning(f"[Client] ⚠ unknown command: {cmd[0]}")
 
         except ConnectionResetError:
-            LOGGER.exception("[Client] ❌ 伺服端已斷線")
+            LOGGER.exception("[Client] ❌ host disconnected")
             return
         except Exception as e:
-            LOGGER.exception(f"[Client] 錯誤: {e}")
+            LOGGER.exception(f"[Client] listening error: {e}")
             return
 
-
+# ===== connect to host and start listen =====
 def start_client(host, port):
+    RECONNECT_DELAY = 5  # reconnect delay in seconds
     while True:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
@@ -119,7 +130,7 @@ def start_client(host, port):
             LOGGER.info("\n[Client] user interrupt, exiting...")
             break
         except socket.error as err:
-            LOGGER.exception(f"[Client] ❌ 連線錯誤: {err}")
+            LOGGER.exception(f"[Client] ❌ connect error: {err}")
 
         LOGGER.info(f"[Client] {RECONNECT_DELAY} seconds later will try to reconnect...")
         time.sleep(RECONNECT_DELAY)
@@ -130,10 +141,10 @@ if __name__ == "__main__":
         description="Simple TCP client for command execution."
     )
     parser.add_argument(
-        "--host", default=DEFAULT_HOST, help="伺服器 IP，預設為 127.0.0.1"
+        "--host", default="127.0.0.1", help="host IP， default IP 127.0.0.1"
     )
     parser.add_argument(
-        "--port", type=int, default=DEFAULT_PORT, help="伺服器埠號，預設為 55688"
+        "--port", type=int, default=8888, help="host port， default port 55688"
     )
     args = parser.parse_args()
 

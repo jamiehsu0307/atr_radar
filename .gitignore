@@ -1,2 +1,5 @@
 __pycache__/
 *.pt
+logs/
+img_out/
+label_out/
