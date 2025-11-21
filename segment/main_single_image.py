@@ -28,8 +28,8 @@ ADD_TOP = 0
 ADD_BOTTOM = 0
 
 # 3) 模型設定
-SHIP_WEIGHTS_PATH = "/data/yolov9/segment/ship.pt"
-SEA_WEIGHTS_PATH = "/data/yolov9/segment/sea.pt"
+SHIP_WEIGHTS_PATH = "/data/yolov9/segment/models/ship.pt"
+SEA_WEIGHTS_PATH = "/data/yolov9/segment/models/sea.pt"
 IMG_SIZE = (1080, 1080)  # 視你的模型設定
 CONF_THRES = 0.05
 IOU_THRES = 0.05
@@ -104,8 +104,10 @@ def save_image(
 
 def run(mode: str = "ship"):
     img_path = Path(IMAGE_PATH)
-    stem = img_path.stem.split("_")[1]
-
+    try:
+        stem = img_path.stem.split("_")[1]
+    except:
+        stem = img_path.stem
     # 讀原圖（裁切前）
     img0 = safe_imread(img_path)
     if img0 is None:

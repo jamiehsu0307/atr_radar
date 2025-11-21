@@ -26,7 +26,7 @@ class SegPredictor:
       lines = p.predict_one(img_bgr)  # 回傳 YOLO-Seg 單行字串 list（在「裁後影像」的 0~1）
     """
     def __init__(self, weights, device=None, imgsz=(1080, 1080), fp16=False):
-        self.device = device or ('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.device = torch.device(self.device)
         self.model = DetectMultiBackend(weights, device=self.device, dnn=False, data=False, fp16=fp16)
         self.model.eval()
