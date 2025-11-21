@@ -3,3 +3,4 @@ __pycache__/
 logs/
 img_out/
 label_out/
+txt_out/

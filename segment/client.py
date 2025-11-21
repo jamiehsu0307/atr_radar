@@ -9,31 +9,38 @@ import shutil
 import main_single_image
 
 # ===== logging setting =====
-tz_taiwan = timezone(timedelta(hours=8))
-LOG_DIR = Path(__file__).resolve().parent / "logs" / 'log'
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE = LOG_DIR / f"client_{datetime.now(tz=tz_taiwan).strftime('%Y%m%d_%H%M%S')}.log"
+def setup_logger():
+    tz_taiwan = timezone(timedelta(hours=8))
+    LOG_DIR = Path(__file__).resolve().parent / "logs" / 'log'
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_FILE = LOG_DIR / f"client_{datetime.now(tz=tz_taiwan).strftime('%Y%m%d_%H%M%S')}.log"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [Client] %(levelname)s: %(message)s",
-    handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()],
-)
-LOGGER = logging.getLogger("client")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [Client] %(levelname)s: %(message)s",
+        handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()],
+    )
+    return logging.getLogger("client")
+
 
 # ===== backup path setting =====
-main_single_image.BACKUP_LABELS_OUT_DIR = '/data/yolov9/segment/logs/txt_out/'
-main_single_image.BACKUP_VIS_DIR = '/data/yolov9/segment/logs/img_out/'
-dst_dir = Path("/data/yolov9/segment/logs/img_in")
-dst_dir.mkdir(parents=True, exist_ok=True)
+def setup_backup_paths():
+    main_single_image.BACKUP_LABELS_OUT_DIR = '/data/yolov9/segment/logs/txt_out/'
+    main_single_image.BACKUP_VIS_DIR = '/data/yolov9/segment/logs/img_out/'
+    backup_img_in_path = Path("/data/yolov9/segment/logs/img_in")
+    backup_img_in_path.mkdir(parents=True, exist_ok=True)
+    return backup_img_in_path
+
 
 # ===== action list =====
 def alive_action(*arg):
     return
 
-def backup_action(src_path, dst_dir):
+
+# ===== backup original image =====
+def backup_action(src_path, backup_img_in_path):
     src_path = Path(main_single_image.IMAGE_PATH)
-    dst_path = dst_dir / src_path.name
+    dst_path = backup_img_in_path / src_path.name
     try:
         shutil.copy2(src_path, dst_path)
     except FileNotFoundError:
@@ -41,17 +48,19 @@ def backup_action(src_path, dst_dir):
     except Exception as err:
         LOGGER.exception(f"[Client] failed to copy original image: {err}")
 
+
+# ===== image process action =====
 def img_action(conn, cmd):
     LOGGER.info("get IMG")
     # ===== path setting =====
     main_single_image.IMAGE_PATH = f"/data/yolov9/images/{'_'.join(cmd)}.png"
-    main_single_image.LABELS_DIR = '/data/yolov9/segment/txt_out/'
+    main_single_image.LABELS_OUT_DIR = '/data/yolov9/segment/txt_out/'
     main_single_image.STEP1_VIS_DIR = '/data/yolov9/segment/img_out/'
     
-    # main_single_image.IMAGE_PATH = "/mnt/share/img/" + "_".join(cmd) + ".png"
+    # main_single_image.IMAGE_PATH = f"/mnt/share/img/{"_".join(cmd)}.png"
     # main_single_image.LABELS_OUT_DIR = "/mnt/share/txt/"
     # main_single_image.STEP1_VIS_DIR = "/mnt/share/inf/"
-    backup_action(main_single_image.IMAGE_PATH, dst_dir)
+    backup_action(main_single_image.IMAGE_PATH, backup_img_in_path)
     # ===== image process =====
     try:
         start_time = time.time()
@@ -72,10 +81,12 @@ def img_action(conn, cmd):
     except Exception as e:
         LOGGER.exception(f"[Client] img process error: {e}")
 
+
 # ===== command map =====
 COMMAND_MAP = {"alive": alive_action, "img": img_action}
 
 
+# ===== run action with exception safe =====
 def run_action_safe(action, conn, cmd):
     try:
         action(conn, cmd)
@@ -117,6 +128,7 @@ def listen_server(conn):
             LOGGER.exception(f"[Client] listening error: {e}")
             return
 
+
 # ===== connect to host and start listen =====
 def start_client(host, port):
     RECONNECT_DELAY = 5  # reconnect delay in seconds
@@ -147,5 +159,6 @@ if __name__ == "__main__":
         "--port", type=int, default=8888, help="host port， default port 55688"
     )
     args = parser.parse_args()
-
+    LOGGER = setup_logger()
+    backup_img_in_path = setup_backup_paths()
     start_client(args.host, args.port)

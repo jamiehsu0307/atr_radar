@@ -198,7 +198,7 @@ def run(mode: str = "ship"):
         )
     # 如果你想在「無物件」時一定輸出 -1，可這樣處理：
     if final_line.strip() == "" and FORCE_LINE and EMPTY_MODE == "minus1":
-        save_text_line(Path(LABELS_OUT_DIR), stem, "-1", force_line=False)
+        save_text_line(Path(LABELS_OUT_DIR), stem, "-1", mode, force_line=False)
 
     print(
         f"finish：img_{stem}\n"
@@ -208,4 +208,4 @@ def run(mode: str = "ship"):
 
 
 if __name__ == "__main__":
-    run()
+    run('ship')
